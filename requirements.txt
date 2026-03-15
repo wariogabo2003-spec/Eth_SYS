@@ -1,6 +1,6 @@
 biosteam
-thermosteam
-pandas
 streamlit
+pandas
 google-generativeai
 graphviz
+altair
