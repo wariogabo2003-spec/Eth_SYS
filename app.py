@@ -19,18 +19,17 @@ import google.generativeai as genai
 st.set_page_config(page_title="BioSTEAM & Gemini Smart", layout="wide")
 st.title("🔬 Simulador de Procesos: Bioetanol")
 
+# Configuración de API Key con manejo de errores
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    st.sidebar.warning("⚠️ Configura GEMINI_API_KEY en Secrets.")
+    st.sidebar.error("🔑 Falta la GEMINI_API_KEY en Secrets.")
 
 # ==========================================
 # SIMULACIÓN (BioSTEAM)
 # ==========================================
 def run_simulation(flow_water, flow_ethanol, temp_v220):
-    # Forzar limpieza del registro de BioSTEAM
     bst.main_flowsheet.clear()
-    
     chemicals = tmo.Chemicals(["Water", "Ethanol"])
     bst.settings.set_thermo(chemicals)
     
@@ -51,7 +50,7 @@ def run_simulation(flow_water, flow_ethanol, temp_v220):
     return sys_bio
 
 # ==========================================
-# INTERFAZ
+# INTERFAZ (SLIDERS)
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Variables")
@@ -59,6 +58,9 @@ with st.sidebar:
     f_etanol = st.slider("Etanol (kg/h)", 50, 300, 100)
     t_v220 = st.slider("Temp. Calentamiento (°C)", 80, 115, 95)
 
+# ==========================================
+# EJECUCIÓN Y TABS
+# ==========================================
 try:
     sistema = run_simulation(f_agua, f_etanol, t_v220)
     corrientes = sistema.streams
@@ -71,41 +73,44 @@ try:
         st.table(df_materia)
 
     with tab2:
-        st.subheader("Diagrama de Flujo del Proceso")
+        st.subheader("Diagrama de Flujo")
         try:
-            # Generamos el diagrama en formato 'dot' (texto)
-            # Esto evita que BioSTEAM intente abrir un visor de imágenes externo
-            dot_graph = sistema.diagram(kind='surface', display=False)
-            
-            if dot_graph is not None:
-                # Si es un objeto de Graphviz, usamos .source, si no, lo convertimos a string
-                source_code = getattr(dot_graph, 'source', str(dot_graph))
-                st.graphviz_chart(source_code)
-            else:
-                st.error("BioSTEAM devolvió un objeto vacío para el diagrama.")
+            dot_obj = sistema.diagram(kind='surface', display=False)
+            source_code = getattr(dot_obj, 'source', str(dot_obj))
+            st.graphviz_chart(source_code)
         except Exception as e:
-            st.warning(f"Error al renderizar: {e}")
-            st.info("💡 Asegúrate de haber creado el archivo 'packages.txt' con la palabra 'graphviz' en tu GitHub.")
+            st.warning("Diagrama no disponible.")
 
     with tab3:
-        st.subheader("Análisis Inteligente")
-        if st.button("Generar Reporte IA"):
+        st.subheader("Análisis con Gemini")
+        # El botón debe estar fuera de cualquier otro widget condicional complejo
+        if st.button("🚀 Generar Informe Técnico"):
             if "GEMINI_API_KEY" in st.secrets:
-                with st.spinner("Analizando..."):
+                with st.spinner("La IA está analizando los datos..."):
                     try:
-                        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                        target_model = next((m for m in ["models/gemini-1.5-flash", "models/gemini-1.5-pro"] if m in available_models), None)
+                        # Buscamos modelos disponibles
+                        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                        # Prioridad Flash
+                        target = next((m for m in models if "1.5-flash" in m), models[0] if models else None)
                         
-                        if target_model:
-                            model = genai.GenerativeModel(target_model)
-                            prompt = f"Analiza estos datos de BioSTEAM: {df_materia.to_string()}. Evalúa la separación a {t_v220}°C."
+                        if target:
+                            model = genai.GenerativeModel(target)
+                            prompt = f"""
+                            Actúa como ingeniero químico. Datos: {df_materia.to_string()}
+                            Explica brevemente la eficiencia de separación del alcohol a {t_v220}°C. 
+                            Responde en español y de forma directa.
+                            """
                             response = model.generate_content(prompt)
-                            st.info(f"### Informe ({target_model})")
+                            
+                            st.success(f"Informe generado con: {target}")
+                            st.markdown("---")
                             st.markdown(response.text)
+                        else:
+                            st.error("No se encontraron modelos de IA activos en tu cuenta.")
                     except Exception as e:
-                        st.error(f"Error en IA: {e}")
+                        st.error(f"Error al conectar con la IA: {e}")
             else:
-                st.error("Falta API Key.")
+                st.error("Por favor, agrega la API Key en los Secrets.")
 
 except Exception as e:
-    st.error(f"Error: {e}")
+    st.error(f"Error en la simulación: {e}")
