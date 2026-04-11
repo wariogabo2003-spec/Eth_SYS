@@ -164,7 +164,6 @@ try:
     with tab_pfd:
         try:
             dot = sistema.diagram(kind='surface', display=False)
-            # Extracción segura de la fuente del diagrama
             source = dot.source if hasattr(dot, 'source') else str(dot)
             st.graphviz_chart(source)
         except:
@@ -183,20 +182,25 @@ try:
 
             with st.chat_message("assistant"):
                 try:
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    # Selección dinámica del modelo para evitar errores de versión (Error 404)
+                    model_list = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                    # Priorizar flash si existe, si no usar el primero disponible
+                    target_model = next((m for m in model_list if "flash" in m), model_list[0])
+                    
+                    model = genai.GenerativeModel(target_model)
                     
                     context = f"""
                     Eres un ingeniero experto. Contexto técnico:
                     - ROI: {econ['ROI']:.2f}%, NPV: {econ['NPV']:.2f}
                     - Costo producción: {econ['CostoProd']:.2f} USD/kg
                     - Parámetros: Alimento {t_feed}C, W220 {t_w220}C, Flash {p_v100}Pa.
-                    Responde de forma profesional.
+                    Responde de forma profesional y clara.
                     """
                     response = model.generate_content(f"{context}\nUsuario pregunta: {prompt}")
                     st.markdown(response.text)
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                 except Exception as e:
-                    st.error(f"Error IA: {e}")
+                    st.error(f"Error IA: {e}. Intenta revisar tu API Key o conexión.")
 
 except Exception as e:
     st.error(f"Error en Simulación: {e}")
