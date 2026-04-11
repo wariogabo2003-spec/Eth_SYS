@@ -1,7 +1,7 @@
 import streamlit as st
 import sys
 
-# 1. PARCHE DE COMPATIBILIDAD PARA ALTAIR (Evita errores de versión v4/v5)
+# 1. PARCHE DE COMPATIBILIDAD PARA ALTAIR
 try:
     import altair.vegalite.v5 as lv5
     sys.modules['altair.vegalite.v4'] = lv5
@@ -16,11 +16,11 @@ import google.generativeai as genai
 # ==========================================
 # CONFIGURACIÓN DE LA PÁGINA
 # ==========================================
-st.set_page_config(page_title="BioSTEAM & Gemini Pro", layout="wide")
+st.set_page_config(page_title="BioSTEAM & Gemini AI", layout="wide")
 
 st.title("🔬 Simulador de Procesos: Bioetanol")
 st.markdown("""
-Esta plataforma integra **BioSTEAM** para el diseño de procesos químicos y **Gemini 1.5 Flash** para el análisis técnico. 
+Esta plataforma integra **BioSTEAM** para el diseño de procesos químicos y **Gemini** para el análisis técnico. 
 Ajusta las variables y observa los cambios en los balances y el diagrama.
 """)
 
@@ -34,7 +34,7 @@ else:
 # FUNCIÓN NÚCLEO DE SIMULACIÓN (BioSTEAM)
 # ==========================================
 def run_simulation(flow_water, flow_ethanol, temp_v220):
-    # Limpieza del flowsheet para evitar errores de ID duplicado al mover sliders
+    # Limpieza total para evitar duplicados en el registro
     bst.main_flowsheet.clear()
     
     # 1. Definición de Compuestos
@@ -74,12 +74,12 @@ def run_simulation(flow_water, flow_ethanol, temp_v220):
 # INTERFAZ DE USUARIO (BARRA LATERAL)
 # ==========================================
 with st.sidebar:
-    st.header("⚙️ Variables de Proceso")
+    st.header("⚙️ Variables de Control")
     f_agua = st.slider("Agua (kg/h)", 500, 1500, 900)
     f_etanol = st.slider("Etanol (kg/h)", 50, 300, 100)
     t_v220 = st.slider("Temp. Calentamiento (°C)", 80, 115, 95)
     st.divider()
-    st.caption("BioSTEAM v1.0 | Gemini 1.5 Flash")
+    st.caption("BioSTEAM + Gemini AI Integration")
 
 # ==========================================
 # LÓGICA PRINCIPAL Y RENDERIZADO
@@ -88,19 +88,19 @@ try:
     # Ejecutar simulación
     sistema = run_simulation(f_agua, f_etanol, t_v220)
     
-    # Recuperar datos de producto
+    # Recuperar datos
     corrientes = sistema.streams
     prod = next((s for s in corrientes if s.ID == "Producto_Final"), None)
     
-    # Métricas clave en la parte superior
+    # Métricas
     if prod:
         c1, c2, c3 = st.columns(3)
         pureza = (prod.imass['Ethanol'] / prod.F_mass) if prod.F_mass > 0 else 0
         c1.metric("Pureza Etanol", f"{pureza:.1%}")
-        c2.metric("Producción Destilado", f"{prod.F_mass:.2f} kg/h")
+        c2.metric("Producción Total", f"{prod.F_mass:.2f} kg/h")
         c3.metric("Etanol Recuperado", f"{prod.imass['Ethanol']:.2f} kg/h")
 
-    # Organización en Tabs
+    # Tabs
     tab1, tab2, tab3 = st.tabs(["📊 Balances", "📐 Diagrama PFD", "🤖 Tutor IA"])
 
     with tab1:
@@ -109,9 +109,9 @@ try:
         for s in corrientes:
             if s.F_mass > 0.01:
                 datos_m.append({
-                    "ID Corriente": s.ID,
-                    "Temp (°C)": round(s.T - 273.15, 2),
-                    "Flujo Total (kg/h)": round(s.F_mass, 2),
+                    "Corriente": s.ID,
+                    "T (°C)": round(s.T - 273.15, 2),
+                    "Flujo (kg/h)": round(s.F_mass, 2),
                     "Etanol (kg/h)": round(s.imass['Ethanol'], 2)
                 })
         df_materia = pd.DataFrame(datos_m)
@@ -120,43 +120,47 @@ try:
     with tab2:
         st.subheader("Diagrama del Proceso (PFD)")
         try:
-            # Extracción segura del código DOT para Graphviz
             pfd_source = sistema.diagram(kind='surface')
             if pfd_source and hasattr(pfd_source, 'source'):
                 st.graphviz_chart(pfd_source.source)
             else:
                 st.graphviz_chart(str(pfd_source))
-        except Exception as diag_err:
-            st.warning("No se pudo renderizar el gráfico dinámico.")
+        except Exception:
             st.info("Orden de equipos: P100 → W210 → W220 → V100 → V1 → W310")
 
     with tab3:
-        st.subheader("Análisis con IA (Gemini 1.5 Flash)")
+        st.subheader("Análisis con IA")
         if st.button("Generar Reporte IA"):
             if "GEMINI_API_KEY" in st.secrets:
                 with st.spinner("Consultando al experto..."):
-                    try:
-                        # Usar el alias -latest para máxima compatibilidad
-                        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-                        
-                        prompt = f"""
-                        Actúa como un ingeniero químico experto. Analiza estos resultados de BioSTEAM:
-                        {df_materia.to_string()}
-                        
-                        Explica brevemente si la separación en el Flash V1 es adecuada a {t_v220}°C 
-                        y qué componente se está recuperando mayoritariamente en el vapor.
-                        """
-                        response = model.generate_content(prompt)
-                        
-                        if response.text:
-                            st.info("### Informe del Tutor")
-                            st.markdown(response.text)
-                        else:
-                            st.warning("La IA no devolvió resultados. Revisa tu cuota.")
-                    except Exception as ai_err:
-                        st.error(f"Error de comunicación con Gemini: {ai_err}")
+                    # Definimos el prompt
+                    prompt = f"""
+                    Actúa como un ingeniero químico experto. Analiza estos resultados de BioSTEAM:
+                    {df_materia.to_string()}
+                    
+                    Explica si la separación en el Flash V1 es adecuada a {t_v220}°C.
+                    """
+                    
+                    # SISTEMA DE FALLBACK DE MODELOS
+                    model_list = ['models/gemini-1.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+                    success = False
+                    
+                    for model_name in model_list:
+                        try:
+                            model = genai.GenerativeModel(model_name)
+                            response = model.generate_content(prompt)
+                            if response.text:
+                                st.info(f"### Informe del Tutor ({model_name})")
+                                st.markdown(response.text)
+                                success = True
+                                break
+                        except Exception:
+                            continue # Si falla, intenta el siguiente modelo en la lista
+                    
+                    if not success:
+                        st.error("No se pudo conectar con ningún modelo de Gemini. Verifica tu cuota o versión de la API.")
             else:
-                st.error("Configura la GEMINI_API_KEY en los Secrets de Streamlit.")
+                st.error("Configura la GEMINI_API_KEY en los Secrets.")
 
 except Exception as e:
-    st.error(f"Error general en la aplicación: {e}")
+    st.error(f"Error detectado: {e}")
