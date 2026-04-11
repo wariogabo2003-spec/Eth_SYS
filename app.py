@@ -28,7 +28,9 @@ else:
 # SIMULACIÓN (BioSTEAM)
 # ==========================================
 def run_simulation(flow_water, flow_ethanol, temp_v220):
+    # Forzar limpieza del registro de BioSTEAM
     bst.main_flowsheet.clear()
+    
     chemicals = tmo.Chemicals(["Water", "Ethanol"])
     bst.settings.set_thermo(chemicals)
     
@@ -71,41 +73,35 @@ try:
     with tab2:
         st.subheader("Diagrama de Flujo del Proceso")
         try:
-            # MÉTODO ROBUSTO: Generar el objeto Digraph y extraer su código fuente DOT
-            # kind='surface' suele ser el más estable para visualización web
-            dot_obj = sistema.diagram(kind='surface')
+            # Generamos el diagrama en formato 'dot' (texto)
+            # Esto evita que BioSTEAM intente abrir un visor de imágenes externo
+            dot_graph = sistema.diagram(kind='surface', display=False)
             
-            # Si dot_obj es una cadena, la imprimimos; si es un objeto, extraemos .source
-            dot_code = dot_obj.source if hasattr(dot_obj, 'source') else str(dot_obj)
-            
-            # Renderizar usando el motor de Streamlit
-            st.graphviz_chart(dot_code)
-            
+            if dot_graph is not None:
+                # Si es un objeto de Graphviz, usamos .source, si no, lo convertimos a string
+                source_code = getattr(dot_graph, 'source', str(dot_graph))
+                st.graphviz_chart(source_code)
+            else:
+                st.error("BioSTEAM devolvió un objeto vacío para el diagrama.")
         except Exception as e:
-            st.warning(f"No se pudo generar el diagrama dinámico. Error: {e}")
-            st.info("Representación lógica: P100 (Bomba) -> W210 (Intercambiador) -> W220 (Calentador) -> V1 (Flash) -> W310 (Condensador)")
+            st.warning(f"Error al renderizar: {e}")
+            st.info("💡 Asegúrate de haber creado el archivo 'packages.txt' con la palabra 'graphviz' en tu GitHub.")
 
     with tab3:
         st.subheader("Análisis Inteligente")
         if st.button("Generar Reporte IA"):
             if "GEMINI_API_KEY" in st.secrets:
-                with st.spinner("Analizando con Gemini..."):
+                with st.spinner("Analizando..."):
                     try:
-                        # Usamos la lógica de auto-detección que ya te funcionó
                         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                         target_model = next((m for m in ["models/gemini-1.5-flash", "models/gemini-1.5-pro"] if m in available_models), None)
                         
-                        if not target_model and available_models:
-                            target_model = available_models[0]
-
                         if target_model:
                             model = genai.GenerativeModel(target_model)
-                            prompt = f"Como experto en ingeniería, analiza estos datos de BioSTEAM: {df_materia.to_string()}. Evalúa la separación a {t_v220}°C."
+                            prompt = f"Analiza estos datos de BioSTEAM: {df_materia.to_string()}. Evalúa la separación a {t_v220}°C."
                             response = model.generate_content(prompt)
-                            st.info(f"### Informe (Modelo: {target_model})")
+                            st.info(f"### Informe ({target_model})")
                             st.markdown(response.text)
-                        else:
-                            st.error("No hay modelos disponibles.")
                     except Exception as e:
                         st.error(f"Error en IA: {e}")
             else:
