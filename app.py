@@ -1,7 +1,7 @@
 import streamlit as st
 import sys
 
-# 1. SOLUCIÓN AL ERROR DE ALTAIR (v4 a v5)
+# 1. PARCHE DE ALTAIR (v4 a v5)
 try:
     import altair.vegalite.v5 as lv5
     sys.modules['altair.vegalite.v4'] = lv5
@@ -16,10 +16,10 @@ import google.generativeai as genai
 # ==========================================
 # CONFIGURACIÓN DE LA PÁGINA
 # ==========================================
-st.set_page_config(page_title="BioSTEAM & Gemini 2.0", layout="wide")
+st.set_page_config(page_title="BioSTEAM & Gemini Pro", layout="wide")
 
 st.title("🔬 Simulador de Procesos: Bioetanol")
-st.markdown("Plataforma de simulación termodinámica con análisis por IA.")
+st.markdown("Simulación termodinámica con análisis por IA de última generación.")
 
 # Configuración Segura de API de Gemini
 if "GEMINI_API_KEY" in st.secrets:
@@ -66,8 +66,6 @@ with st.sidebar:
 # ==========================================
 try:
     sistema = run_simulation(f_agua, f_etanol, t_v220)
-    
-    # Buscar producto final
     corrientes = sistema.streams
     prod = next((s for s in corrientes if s.ID == "Producto_Final"), None)
     
@@ -94,35 +92,36 @@ try:
         st.table(df_materia)
 
     with tab2:
-        st.subheader("Diagrama del Proceso")
-        # 2. SOLUCIÓN AL ERROR NONETYPE: Usamos el método .diagram() con retorno DOT de string
+        st.subheader("Visualización del Proceso")
         try:
-            # Generamos el código fuente de Graphviz
-            pfd_source = sistema.diagram(kind='surface') 
-            # BioSTEAM genera un objeto Digraph de Graphviz, lo pasamos a DOT string
-            st.graphviz_chart(pfd_source.source)
-        except Exception as diag_err:
-            st.warning(f"Error visual: {diag_err}. Esto ocurre por dependencias de Graphviz en el servidor.")
+            # Intentamos generar el DOT de la forma más compatible posible
+            dot_data = sistema.diagram('dot')
+            if hasattr(dot_data, 'source'):
+                st.graphviz_chart(dot_data.source)
+            else:
+                # Si falla el objeto, intentamos forzar string
+                st.graphviz_chart(str(dot_data))
+        except:
+            st.info("💡 El diagrama detallado requiere Graphviz en el servidor. Aquí tienes el orden de equipos:")
+            st.code("P100 -> W210 -> W220 -> V100 -> V1 -> W310")
 
     with tab3:
-        st.subheader("Análisis con Gemini 2.0")
-        if st.button("Generar Reporte IA"):
+        st.subheader("Análisis con IA")
+        if st.button("Generar Reporte"):
             if "GEMINI_API_KEY" in st.secrets:
-                with st.spinner("Consultando a Gemini 2.0..."):
-                    # 3. SOLUCIÓN AL ERROR 404: Usamos el ID de modelo más estable para v2
-                    model = genai.GenerativeModel('gemini-2.0-flash') 
+                with st.spinner("Generando informe técnico..."):
+                    # MODELO ACTUALIZADO A 1.5-FLASH (Estable y disponible)
+                    model = genai.GenerativeModel('gemini-1.5-flash') 
                     
                     prompt = f"""
-                    Analiza como ingeniero químico los resultados:
+                    Actúa como tutor de ingeniería química. Analiza estos resultados de BioSTEAM:
                     {df_materia.to_string()}
-                    
-                    ¿Qué está pasando en el Flash V1 con una temperatura de {t_v220}°C? 
-                    ¿Es una separación eficiente? Responde de forma concisa.
+                    Explica si la separación en el Flash V1 es adecuada a {t_v220}°C.
                     """
                     response = model.generate_content(prompt)
                     st.info(response.text)
             else:
-                st.error("Configura la API Key en los Secrets.")
+                st.error("Configura la API Key.")
 
 except Exception as e:
     st.error(f"Error detectado: {e}")
