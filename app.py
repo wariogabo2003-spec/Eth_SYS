@@ -1,7 +1,7 @@
 import streamlit as st
 import sys
 
-# PARCHE DE ALTAIR
+# 1. PARCHE DE COMPATIBILIDAD PARA ALTAIR
 try:
     import altair.vegalite.v5 as lv5
     sys.modules['altair.vegalite.v4'] = lv5
@@ -61,7 +61,7 @@ try:
     sistema = run_simulation(f_agua, f_etanol, t_v220)
     corrientes = sistema.streams
     
-    tab1, tab2, tab3 = st.tabs(["📊 Balances", "📐 PFD", "🤖 Tutor IA"])
+    tab1, tab2, tab3 = st.tabs(["📊 Balances", "📐 Diagrama PFD", "🤖 Tutor IA"])
 
     with tab1:
         datos_m = [{"Corriente": s.ID, "T (°C)": round(s.T-273.15, 2), "Flujo (kg/h)": round(s.F_mass, 2)} for s in corrientes if s.F_mass > 0.01]
@@ -69,42 +69,47 @@ try:
         st.table(df_materia)
 
     with tab2:
+        st.subheader("Diagrama de Flujo del Proceso")
         try:
-            pfd = sistema.diagram(kind='surface')
-            st.graphviz_chart(pfd.source if hasattr(pfd, 'source') else str(pfd))
-        except:
-            st.info("P100 -> W210 -> W220 -> V100 -> V1 -> W310")
+            # MÉTODO ROBUSTO: Generar el objeto Digraph y extraer su código fuente DOT
+            # kind='surface' suele ser el más estable para visualización web
+            dot_obj = sistema.diagram(kind='surface')
+            
+            # Si dot_obj es una cadena, la imprimimos; si es un objeto, extraemos .source
+            dot_code = dot_obj.source if hasattr(dot_obj, 'source') else str(dot_obj)
+            
+            # Renderizar usando el motor de Streamlit
+            st.graphviz_chart(dot_code)
+            
+        except Exception as e:
+            st.warning(f"No se pudo generar el diagrama dinámico. Error: {e}")
+            st.info("Representación lógica: P100 (Bomba) -> W210 (Intercambiador) -> W220 (Calentador) -> V1 (Flash) -> W310 (Condensador)")
 
     with tab3:
         st.subheader("Análisis Inteligente")
         if st.button("Generar Reporte IA"):
             if "GEMINI_API_KEY" in st.secrets:
-                with st.spinner("Buscando modelo disponible y analizando..."):
+                with st.spinner("Analizando con Gemini..."):
                     try:
-                        # AUTO-DETECCIÓN DE MODELOS DISPONIBLES
+                        # Usamos la lógica de auto-detección que ya te funcionó
                         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                        # Prioridad: 1.5-flash, luego 1.5-pro, luego lo que sea que empiece con gemini
-                        target_model = None
-                        for m in ["models/gemini-1.5-flash", "models/gemini-1.5-pro"]:
-                            if m in available_models:
-                                target_model = m
-                                break
+                        target_model = next((m for m in ["models/gemini-1.5-flash", "models/gemini-1.5-pro"] if m in available_models), None)
                         
                         if not target_model and available_models:
                             target_model = available_models[0]
 
                         if target_model:
                             model = genai.GenerativeModel(target_model)
-                            prompt = f"Como ingeniero químico, analiza: {df_materia.to_string()}. ¿Es eficiente la separación a {t_v220}°C?"
+                            prompt = f"Como experto en ingeniería, analiza estos datos de BioSTEAM: {df_materia.to_string()}. Evalúa la separación a {t_v220}°C."
                             response = model.generate_content(prompt)
                             st.info(f"### Informe (Modelo: {target_model})")
                             st.markdown(response.text)
                         else:
-                            st.error("No se encontraron modelos de generación de contenido en esta API Key.")
+                            st.error("No hay modelos disponibles.")
                     except Exception as e:
-                        st.error(f"Error crítico de API: {e}")
+                        st.error(f"Error en IA: {e}")
             else:
-                st.error("Configura la API Key.")
+                st.error("Falta API Key.")
 
 except Exception as e:
     st.error(f"Error: {e}")
