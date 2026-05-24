@@ -45,7 +45,7 @@ with st.sidebar:
     p_etanol = st.slider("Precio Etanol (USD/kg)", 0.50, 15.00, 5.00)
 
 # ==========================================
-# FUNCIÓN DE SIMULACIÓN Y ECONOMÍA (CORREGIDA)
+# FUNCIÓN DE SIMULACIÓN Y ECONOMÍA
 # ==========================================
 def run_full_simulation(params, prices):
     bst.main_flowsheet.clear()
@@ -58,41 +58,34 @@ def run_full_simulation(params, prices):
     bst.settings.electricity_price = prices['luz']
     
     # Corrientes
-    mosto = bst.Stream("MOOSTO", 
+    mosto = bst.Stream("MOSTO", 
                        Water=900, Ethanol=100, units="kg/hr", 
                        T=params['t_feed'] + 273.15,
-                       phase='l', 
                        price=prices['mosto'])
     
-    # Corriente auxiliar para definir las propiedades térmicas del retorno inicial
-    vinazas_retorno = bst.Stream("Vinazas_Retorno", Water=200, T=95+273.15, phase='l')
+    vinazas_retorno = bst.Stream("Vinazas_Retorno", Water=200, T=95+273.15)
     
     # Equipos
     P100 = bst.Pump("P100", ins=mosto, P=4*101325)
     
-    # Se añade rigurosidad termodinámica a las corrientes de fase del intercambiador de proceso
     W210 = bst.HXprocess("W210", ins=(P100-0, vinazas_retorno), 
                         outs=("Mosto_Pre", "Drenaje"),
                         phase0='l', phase1='l')
+    W210.outs[0].T = 85+273.15
     
-    W210.T = 85 + 273.15 
-    
-    # W220 - Calentador por utilidad activa (Sin el argumento 'phase')
+    # W220 - Calentador
     W220 = bst.HXutility("W220", ins=W210-0, outs="Mezcla_Caliente", T=params['t_w220'] + 273.15)
     
-    # V100 - Válvula de estrangulamiento isentálpica
+    # V100 - Válvula y Separador Flash V1
     V100 = bst.IsenthalpicValve("V100", ins=W220-0, outs="Mezcla_Bifasica", P=params['p_v100'])
-    
-    # V1 - Separador Flash con balances químicos acoplados (Q=0 adiabático)
     V1 = bst.Flash("V1", ins=V100-0, outs=("Vapor_V1", "Liquido_V1"), P=params['p_v100'], Q=0)
     
-    # W310 - Condensador total utilizando especificación de fracción de vapor V=0 (fuerza fase líquida)
-    W310 = bst.HXutility("W310", ins=V1-0, outs="Producto_Final", T=25+273.15, V=0)
+    # W310 - Condensador final
+    W310 = bst.HXutility("W310", ins=V1-0, outs="Producto_Final", T=25+273.15)
     
-    # P200 - Bomba de descarga de los fondos (vinazas) hacia el acople cruzado
     P200 = bst.Pump("P200", ins=V1-1, outs=vinazas_retorno, P=3*101325)
     
-    # Simulación convergente por secuencia de cálculo explícita
+    # Simulación
     sys_bio = bst.System("planta_etanol", path=(P100, W210, W220, V100, V1, W310, P200))
     sys_bio.simulate()
     
@@ -227,7 +220,7 @@ try:
                 <g transform="translate(160.5 61)">
                     <path d="M115.2 91.1l-10.1 14.03a3.05 3.05 0 0 0 2.5 4.83l68.6-.46a2.94 2.94 0 0 0 2.3-4.76L165.4 88.1a.78.78 0 0 0-.82-.28l-.5.13" stroke="#000" stroke-width="2" fill="#fff"/>
                     <path d="M103 41.96s2.3-3.7 3.3-5.13c1.1-1.44 1.2-2.25 4-5.04 2.9-2.7 5.5-4.87 9.2-6.67 3.8-1.9 5.9-3.7 12-4.32 6.1-.7 7.9-.8 7.9-.8l54.6.16a6 6 0 0 1 5.98 6.02l-.06 22.1a6 6 0 0 1-6.02 6l-16.5-.08s.4 3.15.4 5.04c0 1.98.2 3.96-.5 6.93-.6 2.97-1.2 5.58-3 9.18-1.8 3.6-3.5 6.3-4.8 7.83-1.3 1.62-2.2 2.7-4.9 5.04-2.7 2.43-4.3 3.6-7.4 5.13-3.1 1.62-4.9 2.6-7.1 3.15-2.3.63-3 1.08-6.6 1.44-3.6.27-5.9.45-8.3.27-2.4-.26-5.1-.53-7.2-1.25-2.2-.72-5.8-2.16-7.8-3.24-2.1-1.07-2.3-.7-5.1-2.87-2.8-2.16-3.5-1.98-5.9-5.04-2.5-2.98-4.8-5.77-6.2-9.2-1.4-3.4-3-8.36-3-8.36" stroke="#000" stroke-width="2" fill="#fff"/>
-                    <path d="M125.4 49.7s1-1.44 1.9-2.25c1-.8 2.1-1.62 3.4-2.34 1.3-.7 2.4-1.25 4-1.6 1.7-.46 4.5-.55 4.5-.55s3.1.18 4.8 1c1.8.7 4.1 1.8 5.6 3.4 1.5 1.72 2 2.35 2.7 3.6.8 1.36 1.3 2.08 1.8 3.8.4 1.7.7 3.23.7 4.13 0 1 .1 1.62-.1 2.97-.3 1.44-.1 1.7-.7 3.15-.5 1.44-.4 1.62-1.4 3.15-.9 1.53-1 1.9-2 2.97-1.1 1.17-1.4 1.62-2.6 2.43-1.3.8-1.6 1.17-3.4 1.8-1.8.72-2.1.9-3.5 1.08-1.3.18-1.9.18-3.1.18-1.3-.08-1.6 0-3-.35-1.3-.36-2.9-.9-2.9-.9s-1-.45-2-1.08c-1-.63-1.1-.54-2.3-1.7-1.2-1.27-1.7-1.36-2.7-3.07l-.9-1.7M900 780c0 22.08-17.92 40-40 40s-40-17.92-40-40 17.92-40 40-40 40 17.92 40 780z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <path d="M125.4 49.7s1-1.44 1.9-2.25c1-.8 2.1-1.62 3.4-2.34 1.3-.7 2.4-1.25 4-1.6 1.7-.46 4.5-.55 4.5-.55s3.1.18 4.8 1c1.8.7 4.1 1.8 5.6 3.4 1.5 1.72 2 2.35 2.7 3.6.8 1.36 1.3 2.08 1.8 3.8.4 1.7.7 3.23.7 4.13 0 1 .1 1.62-.1 2.97-.3 1.44-.1 1.7-.7 3.15-.5 1.44-.4 1.62-1.4 3.15-.9 1.53-1 1.9-2 2.97-1.1 1.17-1.4 1.62-2.6 2.43-1.3.8-1.6 1.17-3.4 1.8-1.8.72-2.1.9-3.5 1.08-1.3.18-1.9.18-3.1.18-1.3-.08-1.6 0-3-.35-1.3-.36-2.9-.9-2.9-.9s-1-.45-2-1.08c-1-.63-1.1-.54-2.3-1.7-1.2-1.27-1.7-1.36-2.7-3.07l-.9-1.7M900 780c0 22.08-17.92 40-40 40s-40-17.92-40-40 17.92-40 40-40 40 17.92 40 40z" stroke="#000" stroke-width="2" fill="#fff"/>
                     <path d="M822.56 765.28h60.56l-36.16 15.12 36.16 15.2-60.56-.88" stroke="#000" stroke-width="2" fill="none"/>
                     <path d="M1080 860v120c0 11.05 17.9 20 40 20s40-8.95 40-20V860c0-11.05-17.9-20-40-20s-40 8.95-40 20zM1515.16 1130c0 23.66-17.64 42.84-39.24 42.84-21.72 0-39.36-19.18-39.36-42.84 0-23.66 17.64-42.84 39.36-42.84 21.6 0 39.24 19.18 39.24 42.84z" stroke="#000" stroke-width="2" fill="#fff"/>
                     <path d="M1531.72 1069.1L1420 1200" stroke="#000" stroke-width="2" fill="none"/>
@@ -269,7 +262,8 @@ try:
                     <path d="M600.48 581.5h-.96v-.5h.96z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
                     <path d="M600 889.86l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/>
                     <path d="M600 949.02V1554a6 6 0 0 0 6 6h1377.62" stroke="#3a414a" fill="none"/>
-                    <path d="M1998.38 1554l-14.26 4.63v-9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M600 948.52l.48-.04v.55h-.96v-.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1998.38 1560l-14.26 4.63v-9.27z" stroke="#3a414a" fill="#3a414a"/>
                     <path d="M1005.76 894.24a6 6 0 0 1 8.48 0l21.52 21.52a6 6 0 0 1 0 8.48l-21.52 21.52a6 6 0 0 1-8.48 0l-21.52-21.52a6 6 0 0 1 0-8.48z" stroke="#000" stroke-width="2" fill="#fff"/>
                     <use xlink:href="#e" transform="matrix(1,0,0,1,985,895) translate(18.114809027777778 33.24652777777778)"/>
                     <path d="M1039.02 920h23.6" stroke="#3a414a" fill="none"/>
@@ -350,7 +344,7 @@ try:
                         <path d="M603 20c-253 0-434-161-469-399h188c31 132 124 231 281 231 227 0 367-207 367-568h-12c-80 122-211 199-367 199-257 0-469-206-469-493 0-278 200-505 506-500 245 4 520 158 520 706 0 527-208 824-545 824zm16-703c181 0 324-157 324-332 0-171-135-328-318-328-180 0-317 148-317 332 0 183 131 328 311 328" id="t"/>
                         <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#t" id="i"/>
                         <path d="M646 20c-332 0-524-278-524-764 0-483 194-766 524-766s524 283 524 766c0 485-191 764-524 764zm0-166c218 0 341-220 341-598 0-380-123-601-341-601s-341 222-341 601c0 378 123 598 341 598" id="u"/>
-                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#l" id="j"/>
+                        <g id="j"><use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#l"/><use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,9.038628472222221,0)" xlink:href="#u"/></g>
                         <path d="M180 0v-1490h270l367 940c28 72 75 218 110 339 35-117 81-264 110-339l362-940h271V0h-187c2-448-5-837 7-1287-157 497-311 829-483 1287H842C666-458 514-784 354-1284c12 438 5 843 7 1284H180" id="v"/>
                         <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#v" id="k"/>
                     </defs>
@@ -419,7 +413,10 @@ try:
 
             with st.chat_message("assistant"):
                 try:
+                    # Selección dinámica y filtrado de los modelos disponibles con soporte para generación
                     model_list = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                    
+                    # Intentar priorizar gemini-1.5-flash o gemini-2.5-flash de forma genérica
                     target_model = next((m for m in model_list if "flash" in m), model_list[0])
                     model = genai.GenerativeModel(target_model)
                     
