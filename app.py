@@ -119,51 +119,16 @@ def run_full_simulation(params, prices):
 # ==========================================
 # EXTRACCIÓN DE DATOS PARA PFD DINÁMICO
 # ==========================================
-def obtener_datos_completos(sistema):
+def obtener_datos_unidades(sistema):
     data_map = {}
-    
-    # 1. Datos de Unidades / Equipos
     for unit in sistema.units:
         corriente_salida = unit.outs[0] if unit.outs else None
         data_map[unit.ID] = {
-            "Tipo": "Equipo de Proceso",
-            "Nombre": f"Unidad {unit.ID}",
             "T": f"{corriente_salida.T - 273.15:.1f} °C" if corriente_salida else "N/A",
             "P": f"{corriente_salida.P / 101325:.2f} atm" if corriente_salida else "N/A",
             "Flow": f"{corriente_salida.F_mass:.1f} kg/h" if corriente_salida else "N/A",
-            "Duty": f"{abs(unit.Q)/1000:.1f} kW" if hasattr(unit, 'Q') else "0.0 kW"
+            "Duty": f"{abs(unit.Q)/1000:.1f} kW" if hasattr(unit, 'Q') else "N/A"
         }
-        
-    # 2. Mapeo de Corrientes de Proceso (Rombos 1-10)
-    # Buscamos o asociamos flujos reales del simulador a cada identificador del plano
-    mapeo_corrientes = {
-        "1": {"name": "Entrada Alimento Mosto", "stream": "MOOSTO"}, 
-        "2": {"name": "Mosto Precalentado (Hacia W220)", "stream": "Mosto_Pre"},
-        "3": {"name": "Mezcla Caliente Alta Presión", "stream": "Mezcla_Caliente"},
-        "4": {"name": "Línea de Purga / Drenaje Final", "stream": "Drenaje"},
-        "5": {"name": "Mezcla Bifásica Expandida", "stream": "Mezcla_Bifasica"},
-        "6": {"name": "Alimentación al Flash", "stream": "Mezcla_Bifasica"},
-        "7": {"name": "Vapor de Destilación (Etanol/Agua)", "stream": "Vapor_V1"},
-        "8": {"name": "Vinazas de Fondo (Recirculación)", "stream": "Liquido_V1"},
-        "9": {"name": "Producto Destilado Final", "stream": "Producto_Final"},
-        "10": {"name": "Retorno de Vinazas Térmicas", "stream": "Vinazas_Retorno"}
-    }
-    
-    for key, info in mapeo_corrientes.items():
-        st_obj = next((s for s in sistema.streams if s.ID.lower() == info["stream"].lower()), None)
-        if st_obj:
-            data_map[f"R{key}"] = {
-                "Tipo": "Línea de Proceso / Flujo",
-                "Nombre": info["name"],
-                "T": f"{st_obj.T - 273.15:.1f} °C",
-                "P": f"{st_obj.P / 101325:.2f} atm",
-                "Flow": f"{st_obj.F_mass:.1f} kg/h",
-                "Duty": f"Etanol: {st_obj.imass['Ethanol']:.1f} kg/h"
-            }
-        else:
-            # Fallback por si cambia el ID de la corriente en el solver
-            data_map[f"R{key}"] = {"Tipo": "Línea", "Nombre": info["name"], "T": "25.0 °C", "P": "1.0 atm", "Flow": "1000 kg/h", "Duty": "N/A"}
-
     return json.dumps(data_map)
 
 # ==========================================
@@ -227,264 +192,222 @@ try:
 
     with tab_interactivo:
         st.subheader("Visualización sobre Plano SVG de Planta")
-        st.info("💡 Pasa el cursor directamente sobre cualquier ROMBO (1-10), CÍRCULO (E1-E4, W1-W2) o los propios equipos gráficos para ver datos operativos calculados.")
+        st.info("Pasa el mouse sobre las unidades (Bomba P100, Intercambiador W210, Separador V1, etc.) para ver datos en vivo.")
         
-        json_data_sim = obtener_datos_completos(sistema)
+        json_data_sim = obtener_datos_unidades(sistema)
         
-        # HTML + SVG con clases interactivas asignadas a los elementos nativos
+        # En este bloque f-string consolidamos tu código SVG completo junto a las capas detectoras 'equipo-nodo'
         html_pfd_interactivo = f"""
         <div id="contenedor-pfd" style="position: relative; display: inline-block; background: #ffffff; padding: 15px; border-radius: 8px; width: 100%; overflow: auto;">
             
-            <div id="pfd-tooltip" style="position: absolute; display: none; background: rgba(15, 23, 42, 0.98); color: #ffffff; padding: 12px; border-radius: 6px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; z-index: 9999; pointer-events: none; border: 1px solid #38bdf8; box-shadow: 0px 10px 25px -5px rgba(0,0,0,0.5); min-width: 220px;">
+            <div id="pfd-tooltip" style="position: absolute; display: none; background: rgba(20, 26, 36, 0.96); color: #ffffff; padding: 12px; border-radius: 6px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; z-index: 9999; pointer-events: none; border: 1px solid #4FA8FF; box-shadow: 0px 4px 20px rgba(0,0,0,0.4); min-width: 190px;">
             </div>
 
-            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 2161 1686.32" width="100%" height="auto">
+            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 2161 1626.32" width="100%" height="auto">
                 <style>
-                    .val-text {{ font-family: 'Arial', sans-serif; font-size: 14px; font-weight: bold; fill: #000000; text-anchor: middle; dominant-baseline: central; }}
-                    .title-text {{ font-family: 'Arial', sans-serif; font-size: 16px; font-weight: bold; fill: #2c3e50; text-anchor: middle; }}
-                    
-                    /* Clases de Interactividad Avanzada */
-                    .interactivo-nodo {{
+                    .equipo-nodo {{
                         cursor: pointer;
-                        pointer-events: all;
-                    }}
-                    .interactivo-nodo:hover path, .interactivo-nodo:hover circle {{
-                        fill: #bae6fd !important;
-                        stroke: #0284c7 !important;
-                        stroke-width: 3px !important;
-                    }}
-                    .interactivo-nodo:hover text {{
-                        fill: #0369a1 !important;
-                    }}
-                    .equipo-base-interactivo {{
-                        cursor: pointer;
-                        fill: rgba(56, 189, 248, 0);
+                        fill: rgba(79, 168, 255, 0);
                         stroke: transparent;
-                        pointer-events: all;
+                        transition: all 0.2s ease-in-out;
                     }}
-                    .equipo-base-interactivo:hover {{
-                        fill: rgba(56, 189, 248, 0.15);
-                        stroke: #0284c7;
-                        stroke-width: 2px;
+                    .equipo-nodo:hover {{
+                        fill: rgba(79, 168, 255, 0.25);
+                        stroke: #007BFF;
+                        stroke-width: 3px;
                     }}
                 </style>
-
-                <g transform="translate(160.5 121)">
-                    <g class="interactivo-nodo" id="P100" data-name="Bomba de Alimentación Mosto (P100)">
-                        <path d="M115.2 91.1l-10.1 14.03a3.05 3.05 0 0 0 2.5 4.83l68.6-.46a2.94 2.94 0 0 0 2.3-4.76L165.4 88.1a.78.78 0 0 0-.82-.28l-.5.13" stroke="#000" stroke-width="2" fill="#fff"/>
-                        <path d="M103 41.96s2.3-3.7 3.3-5.13c1.1-1.44 1.2-2.25 4-5.04 2.9-2.7 5.5-4.87 9.2-6.67 3.8-1.9 5.9-3.7 12-4.32 6.1-.7 7.9-.8 7.9-.8l54.6.16a6 6 0 0 1 5.98 6.02l-.06 22.1a6 6 0 0 1-6.02 6l-16.5-.08s.4 3.15.4 5.04c0 1.98.2 3.96-.5 6.93-.6 2.97-1.2 5.58-3 9.18-1.8 3.6-3.5 6.3-4.8 7.83-1.3 1.62-2.2 2.7-4.9 5.04-2.7 2.43-4.3 3.6-7.4 5.13-3.1 1.62-4.9 2.6-7.1 3.15-2.3.63-3 1.08-6.6 1.44-3.6.27-5.9.45-8.3.27-2.4-.26-5.1-.53-7.2-1.25-2.2-.72-5.8-2.16-7.8-3.24-2.1-1.07-2.3-.7-5.1-2.87-2.8-2.16-3.5-1.98-5.9-5.04-2.5-2.98-4.8-5.77-6.2-9.2-1.4-3.4-3-8.36-3-8.36" stroke="#000" stroke-width="2" fill="#fff"/>
-                        <path d="M125.4 49.7s1-1.44 1.9-2.25c1-.8 2.1-1.62 3.4-2.34 1.3-.7 2.4-1.25 4-1.6 1.7-.46 4.5-.55 4.5-.55s3.1.18 4.8 1c1.8.7 4.1 1.8 5.6 3.4 1.5 1.72 2 2.35 2.7 3.6.8 1.36 1.3 2.08 1.8 3.8.4 1.7.7 3.23.7 4.13 0 1 .1 1.62-.1 2.97-.3 1.44-.1 1.7-.7 3.15-.5 1.44-.4 1.62-1.4 3.15-.9 1.53-1 1.9-2 2.97-1.1 1.17-1.4 1.62-2.6 2.43-1.3.8-1.6 1.17-3.4 1.8-1.8.72-2.1.9-3.5 1.08-1.3.18-1.9.18-3.1.18-1.3-.08-1.6 0-3-.35-1.3-.36-2.9-.9-2.9-.9s-1-.45-2-1.08c-1-.63-1.1-.54-2.3-1.7-1.2-1.27-1.7-1.36-2.7-3.07l-.9-1.7M900 780c0 22.08-17.92 40-40 40s-40-17.92-40-40 17.92-40 40-40 40 17.92 40 40z" stroke="#000" stroke-width="2" fill="#fff"/>
-                    </g>
-
-                    <g class="interactivo-nodo" id="W220" data-name="Calentador Auxiliar de Servicios (W220)">
-                        <path d="M822.56 765.28h60.56l-36.16 15.12 36.16 15.2-60.56-.88" stroke="#000" stroke-width="2" fill="none"/>
-                    </g>
-
-                    <g class="interactivo-nodo" id="V1" data-name="Separador Flash de Mezcla (V1)">
-                        <path d="M1080 860v120c0 11.05 17.9 20 40 20s40-8.95 40-20V860c0-11.05-17.9-20-40-20s-40 8.95-40 20z" stroke="#000" stroke-width="2" fill="#fff"/>
-                    </g>
-                    <g class="interactivo-nodo" id="W310" data-name="Condensador de Producto Final (W310)">
-                        <path d="M1515.16 1130c0 23.66-17.64 42.84-39.24 42.84-21.72 0-39.36-19.18-39.36-42.84 0-23.66 17.64-42.84 39.36-42.84 21.6 0 39.24 19.18 39.24 42.84z" stroke="#000" stroke-width="2" fill="#fff"/>
-                    </g>
-                    
+                
+                <g transform="translate(160.5 61)">
+                    <path d="M115.2 91.1l-10.1 14.03a3.05 3.05 0 0 0 2.5 4.83l68.6-.46a2.94 2.94 0 0 0 2.3-4.76L165.4 88.1a.78.78 0 0 0-.82-.28l-.5.13" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <path d="M103 41.96s2.3-3.7 3.3-5.13c1.1-1.44 1.2-2.25 4-5.04 2.9-2.7 5.5-4.87 9.2-6.67 3.8-1.9 5.9-3.7 12-4.32 6.1-.7 7.9-.8 7.9-.8l54.6.16a6 6 0 0 1 5.98 6.02l-.06 22.1a6 6 0 0 1-6.02 6l-16.5-.08s.4 3.15.4 5.04c0 1.98.2 3.96-.5 6.93-.6 2.97-1.2 5.58-3 9.18-1.8 3.6-3.5 6.3-4.8 7.83-1.3 1.62-2.2 2.7-4.9 5.04-2.7 2.43-4.3 3.6-7.4 5.13-3.1 1.62-4.9 2.6-7.1 3.15-2.3.63-3 1.08-6.6 1.44-3.6.27-5.9.45-8.3.27-2.4-.26-5.1-.53-7.2-1.25-2.2-.72-5.8-2.16-7.8-3.24-2.1-1.07-2.3-.7-5.1-2.87-2.8-2.16-3.5-1.98-5.9-5.04-2.5-2.98-4.8-5.77-6.2-9.2-1.4-3.4-3-8.36-3-8.36" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <path d="M125.4 49.7s1-1.44 1.9-2.25c1-.8 2.1-1.62 3.4-2.34 1.3-.7 2.4-1.25 4-1.6 1.7-.46 4.5-.55 4.5-.55s3.1.18 4.8 1c1.8.7 4.1 1.8 5.6 3.4 1.5 1.72 2 2.35 2.7 3.6.8 1.36 1.3 2.08 1.8 3.8.4 1.7.7 3.23.7 4.13 0 1 .1 1.62-.1 2.97-.3 1.44-.1 1.7-.7 3.15-.5 1.44-.4 1.62-1.4 3.15-.9 1.53-1 1.9-2 2.97-1.1 1.17-1.4 1.62-2.6 2.43-1.3.8-1.6 1.17-3.4 1.8-1.8.72-2.1.9-3.5 1.08-1.3.18-1.9.18-3.1.18-1.3-.08-1.6 0-3-.35-1.3-.36-2.9-.9-2.9-.9s-1-.45-2-1.08c-1-.63-1.1-.54-2.3-1.7-1.2-1.27-1.7-1.36-2.7-3.07l-.9-1.7M900 780c0 22.08-17.92 40-40 40s-40-17.92-40-40 17.92-40 40-40 40 17.92 40 40z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <path d="M822.56 765.28h60.56l-36.16 15.12 36.16 15.2-60.56-.88" stroke="#000" stroke-width="2" fill="none"/>
+                    <path d="M1080 860v120c0 11.05 17.9 20 40 20s40-8.95 40-20V860c0-11.05-17.9-20-40-20s-40 8.95-40 20zM1515.16 1130c0 23.66-17.64 42.84-39.24 42.84-21.72 0-39.36-19.18-39.36-42.84 0-23.66 17.64-42.84 39.36-42.84 21.6 0 39.24 19.18 39.24 42.84z" stroke="#000" stroke-width="2" fill="#fff"/>
                     <path d="M1531.72 1069.1L1420 1200" stroke="#000" stroke-width="2" fill="none"/>
                     <path d="M1540 1060l-5.28 19.32-12.12-12.32z" stroke="#000" stroke-width="2"/>
                     <path d="M1436.56 1132.24h8.28l12.36-22.54 29.04 45.08 20.64-22.54h8.28" stroke="#000" stroke-width="2" fill="none"/>
+                    <path d="M-159.5 60h84.6M-159.5 60h-.5" stroke="#3a414a" fill="none"/>
+                    <path d="M-60.14 60l-14.26 4.64v-9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M-.98 60h85.55" stroke="#3a414a" fill="none"/>
+                    <path d="M-.97 60.48h-.55l.04-.48-.04-.48h.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M99.33 60l-14.27 4.64v-9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1675.2 1351.1l-10.1 14.03a3.05 3.05 0 0 0 2.5 4.83l68.6-.46a2.94 2.94 0 0 0 2.3-4.76l-13.08-16.65a.78.78 0 0 0-.82-.28l-.5.13" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <path d="M1663 1301.96s2.3-3.7 3.3-5.13c1.1-1.44 1.2-2.25 4-5.04 2.9-2.7 5.5-4.87 9.2-6.67 3.8-1.9 5.9-3.7 12-4.32 6.1-.7 7.9-.8 7.9-.8l54.6.16a6 6 0 0 1 5.98 6.02l-.06 22.1a6 6 0 0 1-6.02 6l-16.5-.08s.4 3.15.4 5.04c0 1.98.2 3.96-.5 6.93-.6 2.97-1.2 5.58-3 9.18-1.8 3.6-3.5 6.3-4.8 7.83-1.3 1.62-2.2 2.7-4.9 5.04-2.7 2.43-4.3 3.6-7.4 5.13-3.1 1.62-4.9 2.6-7.1 3.15-2.3.63-3 1.08-6.6 1.44-3.6.27-5.9.45-8.3.27-2.4-.26-5.1-.53-7.2-1.25-2.2-.72-5.8-2.16-7.8-3.24-2.1-1.07-2.3-.7-5.1-2.87-2.8-2.16-3.5-1.98-5.9-5.04-2.5-2.98-4.8-5.77-6.2-9.2-1.4-3.4-3-8.36-3-8.36" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <path d="M1685.4 1309.7s1-1.44 1.9-2.25c1-.8 2.1-1.62 3.4-2.34 1.3-.7 2.4-1.25 4-1.6 1.7-.46 4.5-.55 4.5-.55s3.1.18 4.8 1c1.8.7 4.1 1.8 5.6 3.4 1.5 1.72 2 2.35 2.7 3.6.8 1.36 1.3 2.08 1.8 3.8.4 1.7.7 3.23.7 4.13 0 1 .1 1.62-.1 2.97-.3 1.44-.1 1.7-.7 3.15-.5 1.44-.4 1.62-1.4 3.15-.9 1.53-1 1.9-2 2.97-1.1 1.17-1.4 1.62-2.6 2.43-1.3.8-1.6 1.17-3.4 1.8-1.8.72-2.1.9-3.5 1.08-1.3.18-1.9.18-3.1.18-1.3-.08-1.6 0-3-.35-1.3-.36-2.9-.9-2.9-.9s-1-.45-2-1.08c-1-.63-1.1-.54-2.3-1.7-1.2-1.27-1.7-1.36-2.7-3.07l-.9-1.7" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <path d="M-139.5 765.28h5.02m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.03m5.03 0h10.04m5.02 0h10.03m5.02 0H-14m5 0H1.06m5.02 0H16.1m5.03 0h10.04m5.02 0h10.03m5.02 0H61.3m5 0h10.05m5.02 0H91.4m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.03m5.03 0H242m5 0h10.05m5.02 0h10.04m5.03 0h10.04m5.02 0h10.03m5.02 0h10.04m5 0h10.05m5.02 0h10.04m5.03 0h10.04m5.02 0h10.02m5.03 0h10.03m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0H498m5.02 0h10.04m5.02 0h10.03m5.03 0h10.04m5.02 0h10.03m5.02 0h10.04m5 0h10.05m5.02 0h10.04m5.03 0h10.04m5.02 0h10.03m5.02 0h10.04m5 0h10.05m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0H754m5.02 0h10.04m5.02 0h10.04m5.02 0h10.04m5.02 0h5.02M-139.5 765.28h-.5" stroke="#3a414a" fill="none"/>
+                    <path d="M823.98 765.28l-14.26 4.63v-9.25z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M825.1 794.72h-5.02m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0H774.9m-5.02 0h-10.04m-5 0h-10.06m-5 0h-10.05m-5.02 0h-10.03m-5.02 0H699.6m-5 0h-10.05m-5.02 0H669.5m-5.03 0h-10.04m-5.02 0h-10.03m-5.02 0H624.3m-5 0h-10.04m-5.02 0H594.2m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0H518.9m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.03m-5.03 0H443.6m-5 0h-10.05m-5.02 0H413.5m-5.03 0h-10.04m-5.02 0h-10.03m-5.02 0H368.3m-5 0h-10.05m-5.02 0H338.2m-5.03 0h-10.04m-5.02 0h-10.03m-5 0H293m-5.02 0h-10.04m-5.02 0H262.9m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0H187.6m-5.02 0h-10.04m-5.02 0H157.5m-5.03 0h-10.04m-5.02 0h-10.03m-5.02 0H112.3m-5 0H97.24m-5.02 0H82.2m-5.03 0H67.13m-5.02 0H52.08m-5.02 0H37m-5 0H21.94m-5.02 0H6.9m-5.03 0H-8.15m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0H-68.4m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-5.02M825.1 794.72h3.5" stroke="#3a414a" fill="none"/>
+                    <path d="M-138.38 794.72l14.26-4.63v9.25z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M-34.24 34.24a6 6 0 0 1 8.48 0l21.52 21.52a6 6 0 0 1 0 8.48l-21.52 21.52a6 6 0 0 1-8.48 0l-21.52-21.52a6 6 0 0 1 0-8.48z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#a" transform="matrix(1,0,0,1,-55,35) translate(20.48568576388889 33.24652777777778)"/>
+                    <path d="M345.76 244.24a6 6 0 0 1 8.48 0l21.52 21.52a6 6 0 0 1 0 8.48l-21.52 21.52a6 6 0 0 1-8.48 0l-21.52-21.52a6 6 0 0 1 0-8.48z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#b" transform="matrix(1,0,0,1,325,245) translate(18.228741319444445 33.24652777777778)"/>
+                    <path d="M179.05 65H344a6 6 0 0 1 6 6v154.1" stroke="#3a414a" fill="none"/>
+                    <path d="M179.06 65.47h-.6l.06-.3.08-.64h.46z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M350 239.86l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M350 299.02V534a6 6 0 0 0 6 6h126.62" stroke="#3a414a" fill="none"/>
+                    <path d="M350 298.52l.48-.04v.55h-.96v-.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M497.38 540l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M506 500a6 6 0 0 0-6 6v68a6 6 0 0 0 6 6h188a6 6 0 0 0 6-6v-68a6 6 0 0 0-6-6zM520 500v80m160-80v80m-160-60h160m-160 20h160m-160 20h160M855.76 514.24a6 6 0 0 1 8.48 0l21.52 21.52a6 6 0 0 1 0 8.48l-21.52 21.52a6 6 0 0 1-8.48 0l-21.52-21.52a6 6 0 0 1 0-8.48z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#c" transform="matrix(1,0,0,1,835,515) translate(18.14193576388889 33.24652777777778)"/>
+                    <path d="M701.5 540h113.6" stroke="#3a414a" fill="none"/>
+                    <path d="M701.5 540.48h-.5v-.96h.5z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M829.86 540l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M860 569.02v153.6" stroke="#3a414a" fill="none"/>
+                    <path d="M860 568.52l.48-.04v.55h-.96v-.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M860 737.38l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M595.76 894.24a6 6 0 0 1 8.48 0l21.52 21.52a6 6 0 0 1 0 8.48l-21.52 21.52a6 6 0 0 1-8.48 0l-21.52-21.52a6 6 0 0 1 0-8.48z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#d" transform="matrix(1,0,0,1,575,895) translate(17.827265625000003 33.24652777777778)"/>
+                    <path d="M600 581.5v293.6" stroke="#3a414a" fill="none"/>
+                    <path d="M600.48 581.5h-.96v-.5h.96z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M600 889.86l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M600 949.02V1554a6 6 0 0 0 6 6h1377.62" stroke="#3a414a" fill="none"/>
+                    <path d="M600 948.52l.48-.04v.55h-.96v-.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1998.38 1560l-14.26 4.63v-9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1005.76 894.24a6 6 0 0 1 8.48 0l21.52 21.52a6 6 0 0 1 0 8.48l-21.52 21.52a6 6 0 0 1-8.48 0l-21.52-21.52a6 6 0 0 1 0-8.48z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#e" transform="matrix(1,0,0,1,985,895) translate(18.114809027777778 33.24652777777778)"/>
+                    <path d="M1039.02 920h23.6" stroke="#3a414a" fill="none"/>
+                    <path d="M1039.03 920.48h-.55l.04-.48-.04-.48h.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1077.38 920l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M855.76 894.24a6 6 0 0 1 8.48 0l21.52 21.52a6 6 0 0 1 0 8.48l-21.52 21.52a6 6 0 0 1-8.48 0l-21.52-21.52a6 6 0 0 1 0-8.48z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#f" transform="matrix(1,0,0,1,835,895) translate(18.25044270833333 33.24652777777778)"/>
+                    <path d="M920 906a6 6 0 0 1 6-6h28a6 6 0 0 1 6 6v28a6 6 0 0 1-6 6h-28a6 6 0 0 1-6-6z" fill="none"/>
+                    <path d="M924 910v20l15-10zm15 10h2zm2 0l15-10v20zM940 920v-12m-8 0c0-2.2 3.58-4 8-4s8 1.8 8 4z" stroke="#000" fill="#fff"/>
+                    <path d="M957 920h8.1M957 920h-3.5" stroke="#3a414a" fill="none"/>
+                    <path d="M979.86 920l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M889.02 920h18.1" stroke="#3a414a" fill="none"/>
+                    <path d="M889.03 920.48h-.55l.04-.48-.04-.48h.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M921.88 920l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M860 821.5v53.6" stroke="#3a414a" fill="none"/>
+                    <path d="M860 821l.48-.02v.53h-.96v-.53z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M860 889.86l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1472.12 784.24a6 6 0 0 1 8.5 0l21.5 21.52a6 6 0 0 1 0 8.48l-21.5 21.52a6 6 0 0 1-8.5 0l-21.5-21.52a6 6 0 0 1 0-8.48z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#g" transform="matrix(1,0,0,1,1451.365516096675,785) translate(18.717022569444445 33.24652777777778)"/>
+                    <path d="M1120 838.5V816a6 6 0 0 1 6-6h305.46" stroke="#3a414a" fill="none"/>
+                    <path d="M1120.47 839.02l-.48-.02-.47.03v-.54h.94z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1446.23 810l-14.27 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1476.37 839.02v230.78" stroke="#3a414a" fill="none"/>
+                    <path d="M1476.37 838.52l.47-.04v.55h-.95v-.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1476.37 1084.57l-4.64-14.27h9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1115.76 1288.36a6 6 0 0 1 8.48 0l21.52 21.5a6 6 0 0 1 0 8.5l-21.52 21.5a6 6 0 0 1-8.48 0l-21.52-21.5a6 6 0 0 1 0-8.5z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#h" transform="matrix(1,0,0,1,1095,1289.1141187915582) translate(18.131085069444445 33.24652777777778)"/>
+                    <path d="M1120 1001.5v267.7" stroke="#3a414a" fill="none"/>
+                    <path d="M1120.47 1001.5h-.94v-.52l.48.02.47-.03z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1120 1283.98l-4.63-14.27h9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1149.02 1314.1h496.2" stroke="#3a414a" fill="none"/>
+                    <path d="M1149.03 1314.6h-.55l.04-.5-.04-.46h.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1660 1314.1l-14.27 4.65v-9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1475.76 1348.36a6 6 0 0 1 8.48 0l21.52 21.5a6 6 0 0 1 0 8.5l-21.52 21.5a6 6 0 0 1-8.48 0l-21.52-21.5a6 6 0 0 1 0-8.5z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#i" transform="matrix(1,0,0,1,1455,1349.1141187915582) translate(18.114809027777778 33.24652777777778)"/>
+                    <path d="M1480 1174.05v155.16" stroke="#3a414a" fill="none"/>
+                    <path d="M1480.47 1174.07h-.94v-.46l.94-.1z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1480 1343.98l-4.63-14.27h9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1480 1403.13V1474a6 6 0 0 0 6 6h497.62" stroke="#3a414a" fill="none"/>
+                    <path d="M1480 1402.63l.47-.04v.55h-.94v-.56z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1998.38 1480l-14.26 4.63v-9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1805.76 764.24a6 6 0 0 1 8.48 0l21.52 21.52a6 6 0 0 1 0 8.48l-21.52 21.52a6 6 0 0 1-8.48 0l-21.52-21.52a6 6 0 0 1 0-8.48z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#j" transform="matrix(1,0,0,1,1785,765) translate(13.47613715277778 33.24652777777778)"/>
+                    <path d="M1761.45 1297.5H1804a6 6 0 0 0 6-6V834.9" stroke="#3a414a" fill="none"/>
+                    <path d="M1761.46 1297.96h-.5v-.95h.5z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1810 820.14l4.63 14.26h-9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1810 760.98V465a6 6 0 0 0-6-6H606a6 6 0 0 0-6 6v17.62" stroke="#3a414a" fill="none"/>
+                    <path d="M1810.47 761.52l-.47-.04-.47.04v-.55h.94z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M600 497.38l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M170-40c0-11.05-8.95-20-20-20s-20 8.95-20 20 8.95 20 20 20 20-8.95 20-20z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#k" transform="matrix(1,0,0,1,134,-56) translate(5.963107638888889 24.08376736111111)"/>
+                    <path d="M150-18.5v1.6m0 2.1v3.17m0 2.12v3.16m0 2.12v3.17m0 2.1v1.6" stroke="#3a414a" fill="none"/>
+                    <path d="M150.47-18.5h-.94V-19l.5.02.44-.05z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M150 17.4l-4.63-14.25h9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <path d="M1730 1220c0-11.05-8.95-20-20-20s-20 8.95-20 20 8.95 20 20 20 20-8.95 20-20z" stroke="#000" stroke-width="2" fill="#fff"/>
+                    <use xlink:href="#k" transform="matrix(1,0,0,1,1694,1204) translate(5.963107638888889 24.08376736111111)"/>
+                    <path d="M1710 1241.5v1.6m0 2.1v3.17m0 2.12v3.16m0 2.12v3.17m0 2.1v1.6" stroke="#3a414a" fill="none"/>
+                    <path d="M1710.47 1241.5h-.94v-.52l.52.02.42-.05z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/>
+                    <path d="M1710 1277.4l-4.63-14.25h9.27z" stroke="#3a414a" fill="#3a414a"/>
                     
-                    <path d="M-159.5 60h84.6M-159.5 60h-.5" stroke="#3a414a" fill="none"/><path d="M-60.14 60l-14.26 4.64v-9.27z" stroke="#3a414a" fill="#3a414a"/><path d="M-.98 60h85.55" stroke="#3a414a" fill="none"/><path d="M-.97 60.48h-.55l.04-.48-.04-.48h.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M99.33 60l-14.27 4.64v-9.27z" stroke="#3a414a" fill="#3a414a"/>
+                    <defs>
+                        <path d="M653-1490V0H466v-1314h-10L96-1047v-204l324-239h233" id="l"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#l" id="a"/>
+                        <path d="M154 0v-137l495-537c165-179 249-281 249-418 0-156-121-253-280-253-170 0-278 110-278 278H158c0-264 200-443 465-443 266 0 455 183 455 416 0 161-73 288-336 568L416-179v12h687V0H154" id="m"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#m" id="b"/>
+                        <path d="M635 20c-292 0-500-160-510-396h192c11 142 145 229 315 229 187 0 323-105 323-260 0-161-125-274-346-274H488v-165h121c174 0 294-100 294-254 0-148-104-245-266-245-152 0-291 85-297 230H157c8-234 222-395 484-395 278 0 448 188 448 400 0 168-95 291-247 336v12c190 31 301 169 301 357 0 244-216 425-508 425" id="n"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#n" id="c"/>
+                        <path d="M120-303v-155l652-1032h231v1020h202v167h-202V0H821v-303H120zm702-167v-782h-12L323-482v12h499" id="o"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#o" id="d"/>
+                        <path d="M646 20c-249 0-524-159-524-708 0-524 209-822 547-822 250 0 431 161 467 395H950c-33-129-126-227-281-227-229 0-367 208-367 566h12c80-124 212-198 367-198 255 0 467 205 467 493 0 278-198 501-502 501zm0-167c179 0 318-148 318-334 0-182-133-328-313-328-181 0-322 156-322 330 0 176 134 332 317 332" id="p"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#p" id="e"/>
+                        <path d="M626 20c-262 0-458-168-468-396h184c12 133 134 229 284 229 180 0 311-137 311-326 0-192-136-335-323-335-92 0-196 33-255 78l-178-22 88-738h784v167H429l-51 435h8c61-51 160-87 263-87 273 0 474 211 474 499 0 286-210 496-497 496" id="q"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#q" id="f"/>
+                        <path d="M200 0l662-1311v-12H98v-167h963v177L400 0H200" id="r"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#r" id="g"/>
+                        <path d="M633 20c-303 0-511-173-511-416 0-188 124-348 291-378v-8c-145-37-237-174-237-332 0-227 192-396 457-396 261 0 456 169 456 396 0 158-94 295-235 332v8c162 30 291 190 291 378 0 243-212 416-512 416zm0-165c197 0 322-103 322-261 0-165-138-283-322-283-188 0-324 118-324 283 0 158 123 261 324 261zm0-703c157 0 272-101 272-252 0-149-110-246-272-246-165 0-273 97-273 246 0 151 112 252 273 252" id="s"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#s" id="h"/>
+                        <path d="M603 20c-253 0-434-161-469-399h188c31 132 124 231 281 231 227 0 367-207 367-568h-12c-80 122-211 199-367 199-257 0-469-206-469-493 0-278 200-505 506-500 245 4 520 158 520 706 0 527-208 824-545 824zm16-703c181 0 324-157 324-332 0-171-135-328-318-328-180 0-317 148-317 332 0 183 131 328 311 328" id="t"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#t" id="i"/>
+                        <path d="M646 20c-332 0-524-278-524-764 0-483 194-766 524-766s524 283 524 766c0 485-191 764-524 764zm0-166c218 0 341-220 341-598 0-380-123-601-341-601s-341 222-341 601c0 378 123 598 341 598" id="u"/>
+                        <g id="j"><use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#l"/><use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,9.038628472222221,0)" xlink:href="#u"/></g>
+                        <path d="M180 0v-1490h270l367 940c28 72 75 218 110 339 35-117 81-264 110-339l362-940h271V0h-187c2-448-5-837 7-1287-157 497-311 829-483 1287H842C666-458 514-784 354-1284c12 438 5 843 7 1284H180" id="v"/>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#v" id="k"/>
+                    </defs>
+
+                    <rect id="P100" class="equipo-nodo" x="90" y="30" width="100" height="90" onmouseover="mostrarTooltip(evt, 'P100')" onmouseout="ocultarTooltip()"/>
                     
-                    <g class="interactivo-nodo" id="P200" data-name="Bomba de Fondo de Vinazas (P200)">
-                        <path d="M1675.2 1351.1l-10.1 14.03a3.05 3.05 0 0 0 2.5 4.83l68.6-.46a2.94 2.94 0 0 0 2.3-4.76l-13.08-16.65a.78.78 0 0 0-.82-.28l-.5.13" stroke="#000" stroke-width="2" fill="#fff"/>
-                        <path d="M1663 1301.96s2.3-3.7 3.3-5.13c1.1-1.44 1.2-2.25 4-5.04 2.9-2.7 5.5-4.87 9.2-6.67 3.8-1.9 5.9-3.7 12-4.32 6.1-.7 7.9-.8 7.9-.8l54.6.16a6 6 0 0 1 5.98 6.02l-.06 22.1a6 6 0 0 1-6.02 6l-16.5-.08s.4 3.15.4 5.04c0 1.98.2 3.96-.5 6.93-.6 2.97-1.2 5.58-3 9.18-1.8 3.6-3.5 6.3-4.8 7.83-1.3 1.62-2.2 2.7-4.9 5.04-2.7 2.43-4.3 3.6-7.4 5.13-3.1 1.62-4.9 2.6-7.1 3.15-2.3.63-3 1.08-6.6 1.44-3.6.27-5.9.45-8.3.27-2.4-.26-5.1-.53-7.2-1.25-2.2-.72-5.8-2.16-7.8-3.24-2.1-1.07-2.3-.7-5.1-2.87-2.8-2.16-3.5-1.98-5.9-5.04-2.5-2.98-4.8-5.77-6.2-9.2-1.4-3.4-3-8.36-3-8.36" stroke="#000" stroke-width="2" fill="#fff"/>
-                        <path d="M1685.4 1309.7s1-1.44 1.9-2.25c1-.8 2.1-1.62 3.4-2.34 1.3-.7 2.4-1.25 4-1.6 1.7-.46 4.5-.55 4.5-.55s3.1.18 4.8 1c1.8.7 4.1 1.8 5.6 3.4 1.5 1.72 2 2.35 2.7 3.6.8 1.36 1.3 2.08 1.8 3.8.4 1.7.7 3.23.7 4.13 0 1 .1 1.62-.1 2.97-.3 1.44-.1 1.7-.7 3.15-.5 1.44-.4 1.62-1.4 3.15-.9 1.53-1 1.9-2 2.97-1.1 1.17-1.4 1.62-2.6 2.43-1.3.8-1.6 1.17-3.4 1.8-1.8.72-2.1.9-3.5 1.08-1.3.18-1.9.18-3.1.18-1.3-.08-1.6 0-3-.35-1.3-.36-2.9-.9-2.9-.9s-1-.45-2-1.08c-1-.63-1.1-.54-2.3-1.7-1.2-1.27-1.7-1.36-2.7-3.07l-.9-1.7" stroke="#000" stroke-width="2" fill="#fff"/>
-                    </g>
+                    <rect id="W210" class="equipo-nodo" x="500" y="490" width="200" height="100" onmouseover="mostrarTooltip(evt, 'W210')" onmouseout="ocultarTooltip()"/>
                     
-                    <path d="M825.1 794.72h-5.02m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0H774.9m-5.02 0h-10.04m-5 0h-10.06m-5 0h-10.05m-5.02 0h-10.03m-5.02 0H699.6m-5 0h-10.05m-5.02 0H669.5m-5.03 0h-10.04m-5.02 0h-10.03m-5.02 0H624.3m-5 0h-10.04m-5.02 0H594.2m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0H518.9m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.03m-5.03 0H443.6m-5 0h-10.05m-5.02 0H413.5m-5.03 0h-10.04m-5.02 0h-10.03m-5.02 0H368.3m-5 0h-10.05m-5.02 0H338.2m-5.03 0h-10.04m-5.02 0h-10.03m-5 0H293m-5.02 0h-10.04m-5.02 0H262.9m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0H187.6m-5.02 0h-10.04m-5.02 0H157.5m-5.03 0h-10.04m-5.02 0h-10.03m-5.02 0H112.3m-5 0H97.24m-5.02 0H82.2m-5.03 0H67.13m-5.02 0H52.08m-5.02 0H37m-5 0H21.94m-5.02 0H6.9m-5.03 0H-8.15m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0H-68.4m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-10.04m-5.02 0h-5.02M825.1 794.72h3.5" stroke="#3a414a" fill="none"/><path d="M-138.38 794.72l14.26-4.63v9.25z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="R1">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">1</text>
-                    </g>
+                    <circle id="W220" class="equipo-nodo" cx="860" cy="780" r="45" onmouseover="mostrarTooltip(evt, 'W220')" onmouseout="ocultarTooltip()"/>
                     
-                    <g class="interactivo-nodo" id="R2" transform="translate(350, 265)">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">2</text>
-                    </g>
-
-                    <path d="M179.05 65H344a6 6 0 0 1 6 6v154.1" stroke="#3a414a" fill="none"/><path d="M179.06 65.47h-.6l.06-.3.08-.64h.46z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M350 239.86l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/><path d="M350 299.02V534a6 6 0 0 0 6 6h126.62" stroke="#3a414a" fill="none"/><path d="M350 298.52l.48-.04v.55h-.96v-.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M497.38 540l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/>
+                    <rect id="V100" class="equipo-nodo" x="915" y="900" width="50" height="50" onmouseover="mostrarTooltip(evt, 'V100')" onmouseout="ocultarTooltip()"/>
                     
-                    <g class="interactivo-nodo" id="W210" data-name="Intercambiador Recuperador de Procesos (W210)">
-                        <path d="M506 500a6 6 0 0 0-6 6v68a6 6 0 0 0 6 6h188a6 6 0 0 0 6-6v-68a6 6 0 0 0-6-6zM520 500v80m160-80v80m-160-60h160m-160 20h160m-160 20h160" stroke="#000" stroke-width="2" fill="#fff"/>
-                    </g>
-
-                    <g class="interactivo-nodo" id="R3" transform="translate(860, 535)">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">3</text>
-                    </g>
-
-                    <path d="M701.5 540h113.6" stroke="#3a414a" fill="none"/><path d="M701.5 540.48h-.5v-.96h.5z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M829.86 540l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/><path d="M860 569.02v153.6" stroke="#3a414a" fill="none"/><path d="M860 568.52l.48-.04v.55h-.96v-.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M860 737.38l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="R4" transform="translate(600, 915)">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">4</text>
-                    </g>
-
-                    <path d="M600 581.5v293.6" stroke="#3a414a" fill="none"/><path d="M600.48 581.5h-.96v-.5h.96z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M600 889.86l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/><path d="M600 949.02V1554a6 6 0 0 0 6 6h1377.62" stroke="#3a414a" fill="none"/><path d="M600 948.52l.48-.04v.55h-.96v-.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1998.38 1560l-14.26 4.63v-9.27z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="R5" transform="translate(1010, 915)">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">5</text>
-                    </g>
-
-                    <path d="M1039.02 920h23.6" stroke="#3a414a" fill="none"/><path d="M1039.03 920.48h-.55l.04-.48-.04-.48h.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1077.38 920l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="R6" transform="translate(860, 915)">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">6</text>
-                    </g>
-
-                    <g class="interactivo-nodo" id="V100" data-name="Válvula de Restricción/Expansión (V100)">
-                        <path d="M920 906a6 6 0 0 1 6-6h28a6 6 0 0 1 6 6v28a6 6 0 0 1-6 6h-28a6 6 0 0 1-6-6z" fill="none"/><path d="M924 910v20l15-10zm15 10h2zm2 0l15-10v20zM940 920v-12m-8 0c0-2.2 3.58-4 8-4s8 1.8 8 4z" stroke="#000" fill="#fff"/>
-                    </g>
+                    <rect id="V1" class="equipo-nodo" x="1070" y="830" width="100" height="180" onmouseover="mostrarTooltip(evt, 'V1')" onmouseout="ocultarTooltip()"/>
                     
-                    <path d="M957 920h8.1M957 920h-3.5" stroke="#3a414a" fill="none"/><path d="M79.86 920l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/><path d="M889.02 920h18.1" stroke="#3a414a" fill="none"/><path d="M889.03 920.48h-.55l.04-.48-.04-.48h.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M921.88 920l-14.26 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/><path d="M860 821.5v53.6" stroke="#3a414a" fill="none"/><path d="M860 821l.48-.02v.53h-.96v-.53z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M860 889.86l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="R7" transform="translate(1476, 805)">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">7</text>
-                    </g>
-
-                    <path d="M1120 838.5V816a6 6 0 0 1 6-6h305.46" stroke="#3a414a" fill="none"/><path d="M1120.47 839.02l-.48-.02-.47.03v-.54h.94z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1446.23 810l-14.27 4.63v-9.26z" stroke="#3a414a" fill="#3a414a"/><path d="M1476.37 839.02v230.78" stroke="#3a414a" fill="none"/><path d="M1476.37 838.52l.47-.04v.55h-.95v-.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1476.37 1084.57l-4.64-14.27h9.27z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="R8" transform="translate(1120, 1310)">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">8</text>
-                    </g>
-
-                    <path d="M1120 1001.5v267.7" stroke="#3a414a" fill="none"/><path d="M1120.47 1001.5h-.94v-.52l.48.02.47-.03z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1120 1283.98l-4.63-14.27h9.27z" stroke="#3a414a" fill="#3a414a"/><path d="M1149.02 1314.1h496.2" stroke="#3a414a" fill="none"/><path d="M1149.03 1314.6h-.55l.04-.5-.04-.46h.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1660 1314.1l-14.27 4.65v-9.27z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="R9" transform="translate(1480, 1370)">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">9</text>
-                    </g>
-
-                    <path d="M1480 1174.05v155.16" stroke="#3a414a" fill="none"/><path d="M1480.47 1174.07h-.94v-.46l.94-.1z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1480 1343.98l-4.63-14.27h9.27z" stroke="#3a414a" fill="#3a414a"/><path d="M1480 1403.13V1474a6 6 0 0 0 6 6h497.62" stroke="#3a414a" fill="none"/><path d="M1480 1402.63l.47-.04v.55h-.94v-.56z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1998.38 1480l-14.26 4.63v-9.27z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="R10" transform="translate(1810, 785)">
-                      <path d="M-25,0 L0,-25 L25,0 L0,25 Z" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="0">10</text>
-                    </g>
-
-                    <path d="M1761.45 1297.5H1804a6 6 0 0 0 6-6V834.9" stroke="#3a414a" fill="none"/><path d="M1761.46 1297.96h-.5v-.95h.5z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1810 820.14l4.63 14.26h-9.27z" stroke="#3a414a" fill="#3a414a"/><path d="M1810 760.98V465a6 6 0 0 0-6-6H606a6 6 0 0 0-6 6v17.62" stroke="#3a414a" fill="none"/><path d="M1810.47 761.52l-.47-.04-.47.04v-.55h.94z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M600 497.38l-4.63-14.26h9.26z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="W220_S1" data-name="Agua de Enfriamiento / Vapor W1 (Uso en P100)", transform="translate(150, -40)">
-                      <circle cx="0" cy="0" r="20" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="4">W1</text>
-                    </g>
+                    <rect id="W310" class="equipo-nodo" x="1410" y="1080" width="130" height="100" onmouseover="mostrarTooltip(evt, 'W310')" onmouseout="ocultarTooltip()"/>
                     
-                    <path d="M150-18.5v1.6m0 2.1v3.17m0 2.12v3.16m0 2.12v3.17m0 2.1v1.6" stroke="#3a414a" fill="none"/><path d="M150.47-18.5h-.94V-19l.5.02.44-.05z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M150 17.4l-4.63-14.25h9.26z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="P200_S1" data-name="Servicios de Enfriamiento W2 (Bomba P200)", transform="translate(1710, 1220)">
-                      <circle cx="0" cy="0" r="20" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="4">W2</text>
-                    </g>
-
-                    <path d="M1710 1241.5v1.6m0 2.1v3.17m0 2.12v3.16m0 2.12v3.17m0 2.1v1.6" stroke="#3a414a" fill="none"/><path d="M1710.47 1241.5h-.94v-.52l.52.02.42-.05z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1710 1277.4l-4.63-14.25h9.27z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <path d="M-159.5-100h5.1m5.08 0h10.17m5.1 0h10.17m5.08 0h10.18m5.1 0h10.17m5.08 0h10.18m5.1 0h10.17m5.1 0h10.17m5.1 0h5.08M-159.5-100h-.5" stroke="#3a414a" fill="none"/><path d="M-22.62-100l-14.26 4.64v-9.28z" stroke="#3a414a" fill="#3a414a"/><path d="M21.5-100h5.1m5.1 0h10.22m5.1 0h10.2m5.1 0h10.22m5.1 0h10.2m5.12 0h10.2m5.1 0h10.22m5.1 0h10.2m5.12 0h5.1a6 6 0 0 1 6 6v5.54m0 5.54v5.53" stroke="#3a414a" fill="none"/><path d="M21.5-99.53h-.55l.05-.42-.02-.52h.53z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M150-62.62l-4.63-14.27 9.26.02z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="P100_E" data-name="Energía Eléctrica Consumida (Bomba P100)", transform="translate(0, -100)">
-                      <circle cx="0" cy="0" r="20" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="4">E1</text>
-                    </g>
-
-                    <g class="interactivo-nodo" id="W210_E" data-name="Eficiencia Energética / Pérdidas (Recuperador W210)", transform="translate(240, 765.28)">
-                      <circle cx="0" cy="0" r="20" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="4">E2</text>
-                    </g>
-
-                    <path d="M-139.5 765.28h4.96m4.96 0h9.9m4.97 0h9.9m4.97 0h9.9m4.97 0h9.92m4.96 0h9.9m4.97 0h9.9m4.96 0h9.92m4.96 0h9.92m4.95 0h9.93m4.96 0h9.9m4.96 0h9.92m4.96 0h9.9m4.97 0h9.93m4.96 0h9.9m4.96 0h9.92m4.95 0h9.92m4.96 0h9.93m4.95 0h9.92m4.96 0h9.9m4.97 0h9.92m4.96 0h9.92m4.96 0h9.92m4.96 0h4.96M-139.5 765.28h-.5" stroke="#3a414a" fill="none"/><path d="M217.38 765.28l-14.26 4.63v-9.25z" stroke="#3a414a" fill="#3a414a"/><path d="M261.5 765.28h4.94m4.93 0h9.87m4.93 0h9.87m4.94 0h9.86m4.94 0h9.87m4.93 0h9.87m4.94 0h9.85m4.94 0h9.86m4.93 0h9.86m4.93 0h9.86m4.94 0h9.87m4.93 0h9.87m4.93 0h9.87m4.94 0h9.88m4.93 0h9.88m4.93 0h9.88m4.94 0h9.87m4.92 0h9.87m4.92 0h9.87m4.93 0h9.86m4.93 0h9.87m4.93 0h9.87m4.94 0h9.86m4.94 0h9.87m4.94 0h9.87m4.94 0h9.87m4.95 0h9.87m4.93 0h9.87m4.93 0h9.87m4.94 0h9.87m4.93 0h9.87m4.93 0h9.87m4.94 0h9.87m4.93 0h9.87m4.93 0h9.87m4.94 0h9.86m4.94 0h9.87m4.93 0h4.94" stroke="#3a414a" fill="none"/><path d="M261.5 765.75h-.55l.05-.42-.02-.53h.53z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M823.98 765.28l-14.26 4.63v-9.25z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="W310_E" data-name="Consumo Térmico Condensador E3 (Hacia W310)", transform="translate(1646.86, 1023.2)">
-                      <circle cx="0" cy="0" r="20" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="4">E3</text>
-                    </g>
-
-                    <path d="M1646.86 1044.7v5.43m0 5.44v10.88m0 5.44v10.87m0 5.44v10.9m0 5.43v10.88m0 5.45v5.45a6 6 0 0 1-6 6h-5.16m-5.17 0h-10.33m-5.16 0h-10.33m-5.15 0h-10.33m-5.17 0h-10.33m-5.16 0h-10.33m-5.16 0h-10.33m-5.16 0h-5.17" stroke="#3a414a" fill="none"/><path d="M1646.8 1044.2l.53-.03v.53h-.95v-.56z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1517.65 1132.3l14.26-4.64v9.27z" stroke="#3a414a" fill="#3a414a"/>
-
-                    <g class="interactivo-nodo" id="P200_E" data-name="Consumo Eléctrico Motor E4 (Bomba P200)", transform="translate(1750, 1140)">
-                      <circle cx="0" cy="0" r="20" stroke="#000" stroke-width="2" fill="#fff"/>
-                      <text class="val-text" x="0" y="4">E4</text>
-                    </g>
-
-                    <path d="M1728.5 1140h-4.17m-4.16 0H1716a6 6 0 0 0-6 6v6.1m0 6.1v12.2m0 6.1v6.12" stroke="#3a414a" fill="none"/><path d="M1729 1139.95l.02.52h-.53v-.94h.55z" stroke="#3a414a" stroke-width=".05" fill="#3a414a"/><path d="M1710 1197.38l-4.63-14.27 9.27.02z" stroke="#3a414a" fill="#3a414a"/>
-
+                    <rect id="P200" class="equipo-nodo" x="1650" y="1290" width="110" height="90" onmouseover="mostrarTooltip(evt, 'P200')" onmouseout="ocultarTooltip()"/>
                 </g>
             </svg>
-
-            <script>
-                const simData = {json_data_sim};
-                const tooltip = document.getElementById('pfd-tooltip');
-                
-                document.querySelectorAll('.interactivo-nodo').forEach(el => {{
-                    el.addEventListener('mousemove', (e) => {{
-                        const id = el.id;
-                        let info = simData[id];
-                        let titleName = el.getAttribute('data-name');
-                        
-                        // Si es un rombo de corriente (Inicia con R)
-                        if (id.startsWith('R')) {{
-                            const sNum = id.replace('R', '');
-                            if (simData[id]) {{
-                                info = simData[id];
-                                titleName = "Línea de Proceso " + sNum + ": " + info.Nombre;
-                            }}
-                        }}
-                        
-                        // Fallbacks para círculos de utilidades eléctricas o térmicas si no están definidos explícitamente
-                        if (!info) {{
-                            if (id.includes('_E')) {{
-                                const baseUnit = id.split('_')[0];
-                                const uData = simData[baseUnit] || {{Duty: '0.0 kW'}};
-                                info = {{ Tipo: 'Carga Energética', Nombre: titleName, T: 'N/A', P: 'N/A', Flow: 'N/A', Duty: uData.Duty }};
-                            }} else {{
-                                info = {{ Tipo: 'Utilidad/Auxiliar', Nombre: titleName || id, T: 'Variable', P: '1.0 atm', Flow: 'N/A', Duty: 'N/A' }};
-                            }}
-                        }}
-                        
-                        tooltip.style.display = 'block';
-                        tooltip.innerHTML = `
-                            <strong style="color:#0ea5e9; font-size:14px; display:block; margin-bottom:5px;">${{titleName || info.Nombre}}</strong>
-                            <span style="color:#94a3b8; font-size:11px; display:block; margin-bottom:5px; text-transform: uppercase;">${{info.Tipo || 'Información'}}</span>
-                            <table style="width:100%; font-size:12px; border-collapse:collapse; color:#e2e8f0;">
-                                ${{info.T !== 'N/A' ? `<tr><td style="padding:2px 0; color:#94a3b8;">Temperatura:</td><td style="text-align:right; font-weight:bold;">${{info.T}}</td></tr>` : ''}}
-                                ${{info.P !== 'N/A' ? `<tr><td style="padding:2px 0; color:#94a3b8;">Presión:</td><td style="text-align:right; font-weight:bold;">${{info.P}}</td></tr>` : ''}}
-                                ${{info.Flow !== 'N/A' ? `<tr><td style="padding:2px 0; color:#94a3b8;">Flujo:</td><td style="text-align:right; font-weight:bold;">${{info.Flow}}</td></tr>` : ''}}
-                                ${{info.Duty !== 'N/A' ? `<tr><td style="padding:2px 0; color:#94a3b8;">Parámetro/Carga:</td><td style="text-align:right; font-weight:bold; color:#38bdf8;">${{info.Duty}}</td></tr>` : ''}}
-                            </table>
-                        `;
-                        
-                        const rectContenedor = document.getElementById('contenedor-pfd').getBoundingClientRect();
-                        tooltip.style.left = (e.clientX - rectContenedor.left + 20) + 'px';
-                        tooltip.style.top = (e.clientY - rectContenedor.top + 20) + 'px';
-                    }});
-                    
-                    el.addEventListener('mouseleave', () => {{
-                        tooltip.style.display = 'none';
-                    }});
-                }});
-            </script>
+            
         </div>
+
+        <script>
+            const datosSimulacion = {json_data_sim};
+            const tooltipElement = document.getElementById('pfd-tooltip');
+
+            function mostrarTooltip(evt, idEquipo) {{
+                const datos = datosSimulacion[idEquipo];
+                if (!datos) return;
+
+                tooltipElement.style.display = 'block';
+                tooltipElement.innerHTML = `
+                    <div style="border-bottom: 1px solid #4FA8FF; padding-bottom: 4px; margin-bottom: 6px; font-weight: bold; color: #4FA8FF;">
+                        ⚙️ Equipo: ${{idEquipo}}
+                    </div>
+                    <table style="width: 100%; font-size: 12px; border-collapse: collapse;">
+                        <tr><td style="color: #A0AABF; padding: 2px 0;">Temperatura:</td><td style="text-align: right; font-weight: 500;">${{datos.T}}</td></tr>
+                        <tr><td style="color: #A0AABF; padding: 2px 0;">Presión:</td><td style="text-align: right; font-weight: 500;">${{datos.P}}</td></tr>
+                        <tr><td style="color: #A0AABF; padding: 2px 0;">Flujo Másico:</td><td style="text-align: right; font-weight: 500;">${{datos.Flow}}</td></tr>
+                        <tr><td style="color: #A0AABF; padding: 2px 0;">Carga Térmica (Q):</td><td style="text-align: right; font-weight: 500;">${{datos.Duty}}</td></tr>
+                    </table>
+                `;
+                
+                const rectContenedor = document.getElementById('contenedor-pfd').getBoundingClientRect();
+                tooltipElement.style.left = (evt.clientX - rectContenedor.left + 20) + 'px';
+                tooltipElement.style.top = (evt.clientY - rectContenedor.top + 20) + 'px';
+            }}
+
+            function ocultarTooltip() {{
+                tooltipElement.style.display = 'none';
+            }}
+        </script>
         """
-        st.components.v1.html(html_pfd_interactivo, height=850, scrolling=True)
+        st.components.v1.html(html_pfd_interactivo, height=750, scrolling=True)
 
     with tab_tutor:
-        st.subheader("🤖 Consultoría Técnica y Diagnóstico de Planta")
+        st.write("Conversa con el tutor sobre el proceso, costos o indicadores.")
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
-        
-        if prompt := st.chat_input("¿Cómo puedo optimizar la recuperación de etanol o reducir el gasto operativo?"):
+
+        if prompt := st.chat_input("Ej: ¿Cómo optimizo la pureza de etanol en el Flash?"):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -509,4 +432,4 @@ try:
                     st.error(f"Error IA: {e}")
 
 except Exception as e:
-    st.error(f"Error en la simulación o renderizado: {e}")
+    st.error(f"Error en Simulación: {e}")
