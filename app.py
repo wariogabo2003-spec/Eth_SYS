@@ -45,7 +45,7 @@ with st.sidebar:
     p_etanol = st.slider("Precio Etanol (USD/kg)", 0.50, 15.00, 5.00)
 
 # ==========================================
-# FUNCIÓN DE SIMULACIÓN Y ECONOMÍA (MODIFICADA EN BIOSTEAM)
+# FUNCIÓN DE SIMULACIÓN Y ECONOMÍA (CORREGIDA)
 # ==========================================
 def run_full_simulation(params, prices):
     bst.main_flowsheet.clear()
@@ -61,7 +61,7 @@ def run_full_simulation(params, prices):
     mosto = bst.Stream("MOOSTO", 
                        Water=900, Ethanol=100, units="kg/hr", 
                        T=params['t_feed'] + 273.15,
-                       phase='l', # Forzar fase líquida a la entrada
+                       phase='l', 
                        price=prices['mosto'])
     
     # Corriente auxiliar para definir las propiedades térmicas del retorno inicial
@@ -75,10 +75,9 @@ def run_full_simulation(params, prices):
                         outs=("Mosto_Pre", "Drenaje"),
                         phase0='l', phase1='l')
     
-    # Definimos la temperatura de salida objetivo usando el método de especificación térmica adecuado de BioSTEAM
     W210.T = 85 + 273.15 
     
-    # W220 - Calentador por utilidad activa
+    # W220 - Calentador por utilidad activa (Sin el argumento 'phase')
     W220 = bst.HXutility("W220", ins=W210-0, outs="Mezcla_Caliente", T=params['t_w220'] + 273.15)
     
     # V100 - Válvula de estrangulamiento isentálpica
@@ -87,8 +86,8 @@ def run_full_simulation(params, prices):
     # V1 - Separador Flash con balances químicos acoplados (Q=0 adiabático)
     V1 = bst.Flash("V1", ins=V100-0, outs=("Vapor_V1", "Liquido_V1"), P=params['p_v100'], Q=0)
     
-    # W310 - Condensador total del destilado (fuerza fase líquida 'l')
-    W310 = bst.HXutility("W310", ins=V1-0, outs="Producto_Final", T=25+273.15, phase='l')
+    # W310 - Condensador total utilizando especificación de fracción de vapor V=0 (fuerza fase líquida)
+    W310 = bst.HXutility("W310", ins=V1-0, outs="Producto_Final", T=25+273.15, V=0)
     
     # P200 - Bomba de descarga de los fondos (vinazas) hacia el acople cruzado
     P200 = bst.Pump("P200", ins=V1-1, outs=vinazas_retorno, P=3*101325)
@@ -351,7 +350,7 @@ try:
                         <path d="M603 20c-253 0-434-161-469-399h188c31 132 124 231 281 231 227 0 367-207 367-568h-12c-80 122-211 199-367 199-257 0-469-206-469-493 0-278 200-505 506-500 245 4 520 158 520 706 0 527-208 824-545 824zm16-703c181 0 324-157 324-332 0-171-135-328-318-328-180 0-317 148-317 332 0 183 131 328 311 328" id="t"/>
                         <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#t" id="i"/>
                         <path d="M646 20c-332 0-524-278-524-764 0-483 194-766 524-766s524 283 524 766c0 485-191 764-524 764zm0-166c218 0 341-220 341-598 0-380-123-601-341-601s-341 222-341 601c0 378 123 598 341 598" id="u"/>
-                        <g id="j"><use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#l"/><use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,9.038628472222221,0)" xlink:href="#u"/></g>
+                        <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#l" id="j"/>
                         <path d="M180 0v-1490h270l367 940c28 72 75 218 110 339 35-117 81-264 110-339l362-940h271V0h-187c2-448-5-837 7-1287-157 497-311 829-483 1287H842C666-458 514-784 354-1284c12 438 5 843 7 1284H180" id="v"/>
                         <use transform="matrix(0.010850694444444444,0,0,0.010850694444444444,0,0)" xlink:href="#v" id="k"/>
                     </defs>
